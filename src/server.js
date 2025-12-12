@@ -6,11 +6,19 @@ import clientRoutes from "./routes/client.routes.js";
 
 const app = express();
 
+// 🔥 middleware manual — Railway não remove mais seus headers
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header("Access-Control-Allow-Origin", "https://frontend-sgcc.vercel.app");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.header("Access-Control-Allow-Methods", "GET,POST,PATCH,PUT,DELETE,OPTIONS");
+  next();
+});
 
+// 🔥 CORS oficial
 app.use(cors({
   origin: "https://frontend-sgcc.vercel.app",
-  methods: "GET,POST,PATCH,PUT,DELETE",
-  allowedHeaders: "Content-Type,Authorization",
+  credentials: true,
 }));
 
 app.use(express.json());
@@ -19,6 +27,7 @@ app.use("/auth", authRoutes);
 app.use("/clients", clientRoutes);
 app.use("/sales", saleRoutes);
 
-app.listen(3001, () => {
-  console.log("🔥 Server rodando na porta 3001");
+// Railway precisa usar a porta do ambiente
+app.listen(process.env.PORT || 3001, () => {
+  console.log("🔥 Server rodando");
 });
