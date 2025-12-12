@@ -6,21 +6,40 @@ import clientRoutes from "./routes/client.routes.js";
 
 const app = express();
 
-const FRONTEND_URL = "https://frontend-sgcc.vercel.app";
-
-// 🔥 CORS correto e completo
-app.use(cors({
-  origin: FRONTEND_URL,
+// Configuração EXTENDIDA do CORS
+const corsOptions = {
+  origin: function (origin, callback) {
+    const allowedOrigins = [
+      "https://frontend-sgcc.vercel.app",
+      "http://localhost:3000",
+      "http://localhost:5173"
+    ];
+    
+    // Permitir requisições sem origin (como mobile apps ou curl)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
-  methods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-}));
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'X-Requested-With', 
+    'Accept', 
+    'Origin'
+  ],
+  exposedHeaders: ['Authorization', 'Content-Length'],
+  maxAge: 86400, // 24 horas
+  preflightContinue: false,
+  optionsSuccessStatus: 204
+};
 
-// 🔥 Resposta ao preflight (IMPORTANTE!)
-app.options("*", cors({
-  origin: FRONTEND_URL,
-  credentials: true
-}));
+// Aplicar CORS a todas as rotas
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // Para preflight requests
 
 app.use(express.json());
 
@@ -29,7 +48,8 @@ app.use("/auth", authRoutes);
 app.use("/clients", clientRoutes);
 app.use("/sales", saleRoutes);
 
-// Porta do Railway
-app.listen(process.env.PORT || 3001, () => {
-  console.log("🔥 Server rodando");
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ Server rodando: http://0.0.0.0:${PORT}`);
+  console.log(`🌐 Frontend permitido: https://frontend-sgcc.vercel.app`);
 });
