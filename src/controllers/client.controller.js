@@ -1,4 +1,5 @@
-import db from "../db.js";
+import { db } from "../db.js";
+
 
 export async function createClient(req, res) {
   try {
