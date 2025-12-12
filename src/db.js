@@ -5,9 +5,9 @@ export const db = new Pool({
   user: process.env.DB_USER || "admin",
   password: process.env.DB_PASSWORD || "admin123",
   host: process.env.DB_HOST || "localhost",
-  port: process.env.DB_PORT || 5433,
+  port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 5433,
   database: process.env.DB_NAME || "finexis",
-  ssl: process.env.DB_SSL ? { rejectUnauthorized: false } : false
+  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false
 });
 
 export async function createTables() {
