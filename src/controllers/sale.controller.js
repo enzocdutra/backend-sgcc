@@ -67,28 +67,9 @@ export const listSales = async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const offset = (page - 1) * limit;
 
-    // Query otimizada que já traz todas as informações
+    // Query principal com paginação
     const result = await db.query(`
-      SELECT 
-        s.*, 
-        c.name AS client_name,
-        c.cpf AS client_cpf,
-        c.phone AS client_phone,
-        (
-          SELECT json_agg(
-            json_build_object(
-              'id', i.id,
-              'number', i.number,
-              'due_date', i.due_date,
-              'value', i.value,
-              'paid', i.paid,
-              'late', i.late
-            )
-          ) 
-          FROM installments i 
-          WHERE i.sale_id = s.id
-          ORDER BY i.number
-        ) AS installments
+      SELECT s.*, c.name AS client_name
       FROM sales s
       JOIN clients c ON c.id = s.client_id
       ORDER BY s.id DESC
@@ -104,14 +85,8 @@ export const listSales = async (req, res) => {
     const totalItems = parseInt(countResult.rows[0].total_count);
     const totalPages = Math.ceil(totalItems / limit);
 
-    // Processar os resultados
-    const salesData = result.rows.map(row => ({
-      ...row,
-      installments: row.installments || []
-    }));
-
     res.json({
-      data: salesData,
+      data: result.rows,
       pagination: {
         currentPage: page,
         totalPages: totalPages,
