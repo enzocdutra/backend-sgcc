@@ -63,19 +63,44 @@ export const createSale = async (req, res) => {
 ============================================================= */
 export const listSales = async (req, res) => {
   try {
-    const result = await db.query(`
-      SELECT s.*, c.name AS client_name
+    const page = Number(req.query.page) || 1;
+    const limit = 10;
+    const offset = (page - 1) * limit;
+
+    const result = await db.query(
+      `
+      SELECT
+        s.id,
+        s.client_id,
+        s.total_value,
+        s.entry_value,
+        s.installment_quantity,
+        s.created_at,
+        c.name AS client_name
       FROM sales s
       JOIN clients c ON c.id = s.client_id
       ORDER BY s.id DESC
-    `);
+      LIMIT $1 OFFSET $2
+      `,
+      [limit, offset]
+    );
 
-    res.json(result.rows);
+    const totalResult = await db.query(
+      `SELECT COUNT(*) FROM sales`
+    );
+
+    res.json({
+      data: result.rows,
+      total: Number(totalResult.rows[0].count),
+      page,
+      limit
+    });
+
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Erro ao listar vendas" });
   }
 };
-
 /* =============================================================
    BUSCAR VENDA COMPLETA POR ID
 ============================================================= */
