@@ -18,37 +18,10 @@ export async function createClient(req, res) {
 
 export async function getClients(req, res) {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const offset = (page - 1) * limit;
-
-    // Buscar clientes com paginação
     const result = await db.query(
-      `SELECT * FROM clients 
-       ORDER BY created_at DESC
-       LIMIT $1 OFFSET $2`,
-      [limit, offset]
+      "SELECT * FROM clients ORDER BY created_at DESC"
     );
-
-    // Contar total de clientes
-    const countResult = await db.query(
-      "SELECT COUNT(*) as total_count FROM clients"
-    );
-
-    const totalItems = parseInt(countResult.rows[0].total_count);
-    const totalPages = Math.ceil(totalItems / limit);
-
-    res.json({
-      data: result.rows,
-      pagination: {
-        currentPage: page,
-        totalPages: totalPages,
-        totalItems: totalItems,
-        itemsPerPage: limit,
-        hasNextPage: page < totalPages,
-        hasPreviousPage: page > 1
-      }
-    });
+    res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
