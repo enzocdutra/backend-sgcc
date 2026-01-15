@@ -170,18 +170,25 @@ export const markInstallmentPaid = async (req, res) => {
   try {
     const { id } = req.params;
 
-    await db.query(
+    const result = await db.query(
       `UPDATE installments
        SET paid = true, paid_at = NOW()
-       WHERE id = $1`,
+       WHERE id = $1
+       RETURNING id`,
       [id]
     );
 
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Parcela não encontrada" });
+    }
+
     res.json({ message: "Parcela marcada como paga" });
   } catch (err) {
+    console.error("🔥 ERRO AO PAGAR PARCELA:", err);
     res.status(500).json({ error: "Erro ao atualizar parcela" });
   }
 };
+;
 
 /* =============================================================
    EDITAR CARNÊ
