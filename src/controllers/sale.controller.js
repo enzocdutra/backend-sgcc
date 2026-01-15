@@ -184,8 +184,14 @@ export const markInstallmentPaid = async (req, res) => {
 
     res.json({ message: "Parcela marcada como paga" });
   } catch (err) {
-    console.error("🔥 ERRO AO PAGAR PARCELA:", err);
-    res.status(500).json({ error: "Erro ao atualizar parcela" });
+    console.error("🔥 ERRO AO MARCAR PARCELA COMO PAGA");
+    console.error(err);              // ← ISSO É O MAIS IMPORTANTE
+    console.error(err.stack);        // ← Railway mostra isso nos logs
+
+    res.status(500).json({
+      error: "Erro ao atualizar parcela",
+      detail: err.message
+    });
   }
 };
 ;
