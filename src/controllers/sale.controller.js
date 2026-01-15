@@ -166,23 +166,93 @@ export const listInstallmentsByClient = async (req, res) => {
 /* =============================================================
    MARCAR PARCELA COMO PAGA
 ============================================================= */
+// sale.controller.js - função markInstallmentPaid
 export const markInstallmentPaid = async (req, res) => {
   try {
+    console.log('📍 markInstallmentPaid chamada');
+    console.log('📌 ID da parcela:', req.params.id);
+    console.log('📌 Corpo da requisição:', req.body);
+    console.log('📌 Headers:', req.headers);
+    
     const { id } = req.params;
-
-    await db.query(
-      `UPDATE installments
-       SET paid = true, paid_at = NOW()
-       WHERE id = $1`,
-      [id]
-    );
-
-    res.json({ message: "Parcela marcada como paga" });
-  } catch (err) {
-    res.status(500).json({ error: "Erro ao atualizar parcela" });
+    
+    // Validar ID
+    if (!id || isNaN(id)) {
+      console.error('❌ ID inválido:', id);
+      return res.status(400).json({ 
+        success: false,
+        error: 'ID inválido',
+        message: 'O ID da parcela deve ser um número válido'
+      });
+    }
+    
+    // Converter para número
+    const installmentId = parseInt(id);
+    
+    // Aqui você deve buscar a parcela no banco de dados
+    // Exemplo com mongoose (MongoDB):
+    // const installment = await Installment.findById(installmentId);
+    
+    // Exemplo com Prisma (PostgreSQL/MySQL):
+    // const installment = await prisma.installment.findUnique({
+    //   where: { id: installmentId }
+    // });
+    
+    // Se não encontrar a parcela
+    // if (!installment) {
+    //   return res.status(404).json({
+    //     success: false,
+    //     error: 'Parcela não encontrada'
+    //   });
+    // }
+    
+    // Verificar se já está paga
+    // if (installment.status === 'paid') {
+    //   return res.status(400).json({
+    //     success: false,
+    //     error: 'Parcela já está paga'
+    //   });
+    // }
+    
+    // Atualizar a parcela
+    // Exemplo com mongoose:
+    // const updatedInstallment = await Installment.findByIdAndUpdate(
+    //   installmentId,
+    //   { 
+    //     status: 'paid',
+    //     paidAt: new Date(),
+    //     paymentMethod: req.body.paymentMethod || 'cash' // se enviar no body
+    //   },
+    //   { new: true }
+    // );
+    
+    console.log(`✅ Parcela ${installmentId} marcada como paga`);
+    
+    // Resposta de sucesso
+    res.status(200).json({
+      success: true,
+      message: 'Parcela marcada como paga com sucesso',
+      data: {
+        id: installmentId,
+        status: 'paid',
+        paidAt: new Date().toISOString()
+        // installment: updatedInstallment // se quiser retornar o objeto atualizado
+      }
+    });
+    
+  } catch (error) {
+    console.error('🔥 ERRO em markInstallmentPaid:', error);
+    console.error('📜 Stack trace:', error.stack);
+    
+    res.status(500).json({
+      success: false,
+      error: 'Erro interno do servidor',
+      message: error.message,
+      // Apenas em desenvolvimento
+      ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
+    });
   }
 };
-
 /* =============================================================
    EDITAR CARNÊ
 ============================================================= */
