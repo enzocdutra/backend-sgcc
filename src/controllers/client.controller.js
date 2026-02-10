@@ -18,14 +18,57 @@ export async function createClient(req, res) {
 
 export async function getClients(req, res) {
   try {
-    const result = await db.query(
-      "SELECT * FROM clients ORDER BY created_at DESC"
-    );
-    res.json(result.rows);
+    const page = parseInt(req.query.page) || 1
+    const limit = parseInt(req.query.limit) || 10
+    const offset = (page - 1) * limit
+
+    const clientsQuery = `
+      SELECT 
+        c.id,
+        c.name,
+        c.phone,
+        c.cpf,
+        c.created_at,
+
+        COUNT(i.id) FILTER (WHERE i.paid = false) AS parcelas_pendentes,
+        COUNT(i.id) FILTER (WHERE i.paid = false AND i.due_date < NOW()) AS parcelas_atrasadas
+
+      FROM clients c
+      LEFT JOIN sales s ON s.client_id = c.id
+      LEFT JOIN installments i ON i.sale_id = s.id
+
+      GROUP BY c.id
+      ORDER BY c.created_at DESC
+      LIMIT $1 OFFSET $2
+    `
+
+    const totalQuery = `SELECT COUNT(*) FROM clients`
+
+    const [clientsResult, totalResult] = await Promise.all([
+      db.query(clientsQuery, [limit, offset]),
+      db.query(totalQuery)
+    ])
+
+    const clients = clientsResult.rows.map(c => ({
+      ...c,
+      parcelas_pendentes: Number(c.parcelas_pendentes),
+      parcelas_atrasadas: Number(c.parcelas_atrasadas),
+      em_dia: Number(c.parcelas_atrasadas) === 0
+    }))
+
+    res.json({
+      data: clients,
+      total: Number(totalResult.rows[0].count),
+      page,
+      totalPages: Math.ceil(totalResult.rows[0].count / limit)
+    })
+
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err)
+    res.status(500).json({ error: err.message })
   }
 }
+
 
 // 🚀 NOVO — buscar cliente pelo ID
 export async function getClientById(req, res) {

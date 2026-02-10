@@ -63,15 +63,84 @@ export const createSale = async (req, res) => {
 ============================================================= */
 export const listSales = async (req, res) => {
   try {
-    const result = await db.query(`
+    const { 
+      page = 1, 
+      limit = 10, 
+      search = '',
+      sortBy = 's.id', 
+      sortOrder = 'DESC' 
+    } = req.query;
+    
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    
+    // Construir query base
+    let query = `
       SELECT s.*, c.name AS client_name
       FROM sales s
       JOIN clients c ON c.id = s.client_id
-      ORDER BY s.id DESC
-    `);
-
-    res.json(result.rows);
+      WHERE 1=1
+    `;
+    
+    // Adicionar filtro de pesquisa se houver
+    const params = [];
+    if (search && search.trim() !== '') {
+      query += ` AND (
+        c.name ILIKE $${params.length + 1} OR 
+        c.email ILIKE $${params.length + 1} OR
+        c.phone ILIKE $${params.length + 1}
+      )`;
+      params.push(`%${search.trim()}%`);
+    }
+    
+    // Adicionar ordenação
+    const validSortColumns = ['s.id', 's.created_at', 's.total_value', 'c.name'];
+    const sortColumn = validSortColumns.includes(sortBy) ? sortBy : 's.id';
+    const order = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+    
+    query += ` ORDER BY ${sortColumn} ${order}`;
+    
+    // Adicionar paginação
+    query += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    params.push(parseInt(limit), offset);
+    
+    // Executar query principal
+    const result = await db.query(query, params);
+    
+    // Query para contar total (para paginação)
+    let countQuery = `
+      SELECT COUNT(*) as total
+      FROM sales s
+      JOIN clients c ON c.id = s.client_id
+      WHERE 1=1
+    `;
+    
+    const countParams = [];
+    if (search && search.trim() !== '') {
+      countQuery += ` AND (
+        c.name ILIKE $${countParams.length + 1} OR 
+        c.email ILIKE $${countParams.length + 1} OR
+        c.phone ILIKE $${countParams.length + 1}
+      )`;
+      countParams.push(`%${search.trim()}%`);
+    }
+    
+    const countResult = await db.query(countQuery, countParams);
+    const total = parseInt(countResult.rows[0]?.total || 0);
+    const totalPages = Math.ceil(total / parseInt(limit));
+    
+    res.json({
+      sales: result.rows,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages,
+        totalItems: total,
+        itemsPerPage: parseInt(limit),
+        hasNextPage: parseInt(page) < totalPages,
+        hasPrevPage: parseInt(page) > 1
+      }
+    });
   } catch (err) {
+    console.error("Erro ao listar vendas:", err);
     res.status(500).json({ error: "Erro ao listar vendas" });
   }
 };
