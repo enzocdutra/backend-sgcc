@@ -90,3 +90,18 @@ export async function getClientById(req, res) {
     res.status(500).json({ error: err.message });
   }
 }
+
+export async function getClientsForSelect(req, res) {
+  try {
+    const { rows } = await db.query(`
+      SELECT id, name
+      FROM clients
+      ORDER BY name ASC
+    `)
+
+    res.json(rows)
+  } catch (err) {
+    console.error("Erro ao buscar clientes para select:", err)
+    res.status(500).json({ error: "Erro ao buscar clientes" })
+  }
+}
