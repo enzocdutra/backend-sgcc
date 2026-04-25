@@ -146,6 +146,7 @@ export const listSales = async (req, res) => {
 };
 
 
+
 /* =============================================================
    BUSCAR VENDA COMPLETA POR ID
 ============================================================= */
@@ -238,32 +239,34 @@ export const listInstallmentsByClient = async (req, res) => {
 export const markInstallmentPaid = async (req, res) => {
   try {
     const { id } = req.params;
+    const { paid_value, note } = req.body;
 
     const result = await db.query(
       `UPDATE installments
-       SET paid = true, paid_at = NOW()
-       WHERE id = $1
-       RETURNING id`,
-      [id]
+       SET 
+         paid = true,
+         paid_at = NOW(),
+         paid_value = COALESCE($1, value),
+         note = $2
+       WHERE id = $3
+       RETURNING *`,
+      [paid_value, note, id]
     );
 
     if (result.rowCount === 0) {
       return res.status(404).json({ error: "Parcela não encontrada" });
     }
 
-    res.json({ message: "Parcela marcada como paga" });
-  } catch (err) {
-    console.error("🔥 ERRO AO MARCAR PARCELA COMO PAGA");
-    console.error(err);              // ← ISSO É O MAIS IMPORTANTE
-    console.error(err.stack);        // ← Railway mostra isso nos logs
-
-    res.status(500).json({
-      error: "Erro ao atualizar parcela",
-      detail: err.message
+    res.json({
+      message: "Parcela atualizada",
+      installment: result.rows[0]
     });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erro ao atualizar parcela" });
   }
 };
-;
 
 /* =============================================================
    EDITAR CARNÊ
@@ -279,17 +282,7 @@ export const updateSale = async (req, res) => {
       first_due_date
     } = req.body;
 
-    const paid = await db.query(
-      `SELECT 1 FROM installments WHERE sale_id = $1 AND paid = true LIMIT 1`,
-      [id]
-    );
-
-    if (paid.rows.length > 0) {
-      return res.status(400).json({
-        error: "Não é possível editar carnê com parcelas pagas"
-      });
-    }
-
+    // 🔥 Atualiza dados da venda
     await db.query(
       `UPDATE sales
        SET total_value = $1,
@@ -299,9 +292,10 @@ export const updateSale = async (req, res) => {
       [total_value, entry_value, installment_quantity, id]
     );
 
+    // 🔥 Remove produtos antigos
     await db.query(`DELETE FROM products WHERE sale_id = $1`, [id]);
-    await db.query(`DELETE FROM installments WHERE sale_id = $1`, [id]);
 
+    // 🔥 Insere novos produtos
     for (const product of products) {
       await db.query(
         `INSERT INTO products (sale_id, name, price)
@@ -310,28 +304,49 @@ export const updateSale = async (req, res) => {
       );
     }
 
+    // 🔥 Busca parcelas existentes
+    const existing = await db.query(
+      `SELECT * FROM installments WHERE sale_id = $1 ORDER BY installment_number`,
+      [id]
+    );
+
+    const paidInstallments = existing.rows.filter(p => p.paid);
+    const unpaidInstallments = existing.rows.filter(p => !p.paid);
+
     const remaining = total_value - entry_value;
-    const installmentValue = Number((remaining / installment_quantity).toFixed(2));
+    const newInstallmentValue = Number(
+      (remaining / installment_quantity).toFixed(2)
+    );
+
     const baseDate = first_due_date ? new Date(first_due_date) : new Date();
 
-    for (let i = 1; i <= installment_quantity; i++) {
+    let index = paidInstallments.length;
+
+    // 🔥 Atualiza apenas parcelas NÃO pagas
+    for (let i = 0; i < unpaidInstallments.length; i++) {
+      const parcela = unpaidInstallments[i];
+
       const dueDate = new Date(baseDate);
-      dueDate.setMonth(dueDate.getMonth() + (i - 1));
+      dueDate.setMonth(dueDate.getMonth() + index);
 
       await db.query(
-        `INSERT INTO installments (sale_id, installment_number, value, due_date)
-         VALUES ($1, $2, $3, $4)`,
-        [id, i, installmentValue, dueDate]
+        `UPDATE installments
+         SET value = $1,
+             due_date = $2
+         WHERE id = $3`,
+        [newInstallmentValue, dueDate, parcela.id]
       );
+
+      index++;
     }
 
     res.json({ message: "Carnê atualizado com sucesso" });
 
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Erro ao atualizar carnê" });
   }
 };
-
 /* =============================================================
    EXCLUIR CARNÊ
 ============================================================= */
@@ -365,30 +380,47 @@ export const deleteSale = async (req, res) => {
 ============================================================= */
 export const dashboardStats = async (req, res) => {
   try {
-    const overdue = await db.query(`
-      SELECT COUNT(*) FROM installments
-      WHERE paid = false AND due_date < CURRENT_DATE
+    // Total de clientes
+    const totalClientes = await db.query(`
+      SELECT COUNT(*) FROM clients
     `);
 
-    const monthlySales = await db.query(`
-      SELECT COUNT(*) FROM sales
-      WHERE DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)
+    // Parcelas atrasadas + valor total
+    const overdueData = await db.query(`
+      SELECT 
+        COUNT(*) AS total_parcelas_atrasadas,
+        COALESCE(SUM(i.value), 0) AS total_em_atraso
+      FROM installments i
+      WHERE i.paid = false AND i.due_date < CURRENT_DATE
     `);
 
-    const received = await db.query(`
-      SELECT COALESCE(SUM(value),0) AS total
-      FROM installments
-      WHERE paid = true
-      AND DATE_TRUNC('month', paid_at) = DATE_TRUNC('month', CURRENT_DATE)
+    // 🔥 CLIENTES COM DADOS CORRETOS
+    const clientesAtraso = await db.query(`
+      SELECT 
+        c.id,
+        c.name,
+        c.phone,
+        COUNT(i.id) AS parcelas_atrasadas,
+        COALESCE(SUM(i.value), 0) AS valor_atrasado
+      FROM clients c
+      JOIN sales s ON s.client_id = c.id
+      JOIN installments i ON i.sale_id = s.id
+      WHERE i.paid = false 
+        AND i.due_date < CURRENT_DATE
+      GROUP BY c.id
+      ORDER BY valor_atrasado DESC
+      LIMIT 10
     `);
 
     res.json({
-      overdue_installments: overdue.rows[0].count,
-      monthly_sales: monthlySales.rows[0].count,
-      monthly_received: received.rows[0].total
+      totalClientes: Number(totalClientes.rows[0].count),
+      totalEmAtraso: Number(overdueData.rows[0].total_em_atraso),
+      totalParcelasAtrasadas: Number(overdueData.rows[0].total_parcelas_atrasadas),
+      clientesEmAtraso: clientesAtraso.rows
     });
 
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Erro ao carregar dashboard" });
   }
 };

@@ -16,18 +16,18 @@ const router = Router();
 router.post("/", createSale);
 router.get("/", listSales);
 
-// ⚠️ rotas específicas primeiro
+// 🔥 rotas específicas primeiro
 router.get("/client/:clientId", listSalesByClient);
 router.get("/installments/client/:clientId", listInstallmentsByClient);
 router.get("/dashboard/stats", dashboardStats);
 
 router.patch("/installment/:id/pay", markInstallmentPaid);
 
-// CRUD completo
+// 🔥 edição e exclusão
 router.put("/:id", updateSale);
 router.delete("/:id", deleteSale);
 
-// genérica por último
+// 🔥 genérica por último
 router.get("/:id", getSaleById);
 
 export default router;
