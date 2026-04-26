@@ -11,22 +11,25 @@ export const createSale = async (req, res) => {
       total_value,
       entry_value = 0,
       installment_quantity,
-      first_due_date
+      first_due_date,
+      note // 🔥 RECEBE AQUI
     } = req.body;
 
     if (!client_id || !products?.length || !total_value || !installment_quantity) {
       return res.status(400).json({ error: "Dados incompletos" });
     }
 
+    // 🔥 AGORA SALVA O NOTE
     const saleResult = await db.query(
-      `INSERT INTO sales (client_id, total_value, entry_value, installment_quantity)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO sales (client_id, total_value, entry_value, installment_quantity, note)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING id`,
-      [client_id, total_value, entry_value, installment_quantity]
+      [client_id, total_value, entry_value, installment_quantity, note || null]
     );
 
     const saleId = saleResult.rows[0].id;
 
+    // 🔥 PRODUTOS
     for (const product of products) {
       await db.query(
         `INSERT INTO products (sale_id, name, price)
@@ -39,6 +42,7 @@ export const createSale = async (req, res) => {
     const installmentValue = Number((remaining / installment_quantity).toFixed(2));
     const baseDate = first_due_date ? new Date(first_due_date) : new Date();
 
+    // 🔥 PARCELAS
     for (let i = 1; i <= installment_quantity; i++) {
       const dueDate = new Date(baseDate);
       dueDate.setMonth(dueDate.getMonth() + (i - 1));
@@ -50,14 +54,16 @@ export const createSale = async (req, res) => {
       );
     }
 
-    res.status(201).json({ message: "Venda criada com sucesso", sale_id: saleId });
+    res.status(201).json({
+      message: "Venda criada com sucesso",
+      sale_id: saleId
+    });
 
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Erro ao criar venda" });
   }
 };
-
 /* =============================================================
    LISTAR TODAS AS VENDAS
 ============================================================= */
@@ -239,18 +245,15 @@ export const listInstallmentsByClient = async (req, res) => {
 export const markInstallmentPaid = async (req, res) => {
   try {
     const { id } = req.params;
-    const { paid_value, note } = req.body;
 
     const result = await db.query(
       `UPDATE installments
        SET 
          paid = true,
-         paid_at = NOW(),
-         paid_value = COALESCE($1, value),
-         note = $2
-       WHERE id = $3
+         paid_at = NOW()
+       WHERE id = $1
        RETURNING *`,
-      [paid_value, note, id]
+      [id]
     );
 
     if (result.rowCount === 0) {
@@ -258,7 +261,7 @@ export const markInstallmentPaid = async (req, res) => {
     }
 
     res.json({
-      message: "Parcela atualizada",
+      message: "Parcela paga com sucesso 💸",
       installment: result.rows[0]
     });
 
@@ -274,22 +277,25 @@ export const markInstallmentPaid = async (req, res) => {
 export const updateSale = async (req, res) => {
   try {
     const { id } = req.params;
+
     const {
       products,
       total_value,
       entry_value = 0,
       installment_quantity,
-      first_due_date
+      first_due_date,
+      note // 🔥 RECEBE NOTE
     } = req.body;
 
-    // 🔥 Atualiza dados da venda
+    // 🔥 Atualiza venda (AGORA COM NOTE)
     await db.query(
       `UPDATE sales
        SET total_value = $1,
            entry_value = $2,
-           installment_quantity = $3
-       WHERE id = $4`,
-      [total_value, entry_value, installment_quantity, id]
+           installment_quantity = $3,
+           note = $4
+       WHERE id = $5`,
+      [total_value, entry_value, installment_quantity, note || null, id]
     );
 
     // 🔥 Remove produtos antigos
@@ -304,43 +310,51 @@ export const updateSale = async (req, res) => {
       );
     }
 
-    // 🔥 Busca parcelas existentes
-    const existing = await db.query(
-      `SELECT * FROM installments WHERE sale_id = $1 ORDER BY installment_number`,
+    // 🔥 Busca parcelas pagas
+    const paidResult = await db.query(
+      `SELECT * FROM installments 
+       WHERE sale_id = $1 AND paid = true
+       ORDER BY installment_number`,
       [id]
     );
 
-    const paidInstallments = existing.rows.filter(p => p.paid);
-    const unpaidInstallments = existing.rows.filter(p => !p.paid);
+    const paidInstallments = paidResult.rows;
+
+    // 🔥 Remove parcelas NÃO pagas
+    await db.query(
+      `DELETE FROM installments 
+       WHERE sale_id = $1 AND paid = false`,
+      [id]
+    );
 
     const remaining = total_value - entry_value;
-    const newInstallmentValue = Number(
+
+    // 🔥 QUANTAS FALTAM
+    const remainingInstallments = installment_quantity - paidInstallments.length;
+
+    if (remainingInstallments <= 0) {
+      return res.json({ message: "Carnê atualizado (todas parcelas já pagas)" });
+    }
+
+    const installmentValue = Number(
       (remaining / installment_quantity).toFixed(2)
     );
 
     const baseDate = first_due_date ? new Date(first_due_date) : new Date();
 
-    let index = paidInstallments.length;
-
-    // 🔥 Atualiza apenas parcelas NÃO pagas
-    for (let i = 0; i < unpaidInstallments.length; i++) {
-      const parcela = unpaidInstallments[i];
-
+    // 🔥 recria só as que faltam
+    for (let i = paidInstallments.length + 1; i <= installment_quantity; i++) {
       const dueDate = new Date(baseDate);
-      dueDate.setMonth(dueDate.getMonth() + index);
+      dueDate.setMonth(dueDate.getMonth() + (i - 1));
 
       await db.query(
-        `UPDATE installments
-         SET value = $1,
-             due_date = $2
-         WHERE id = $3`,
-        [newInstallmentValue, dueDate, parcela.id]
+        `INSERT INTO installments (sale_id, installment_number, value, due_date)
+         VALUES ($1, $2, $3, $4)`,
+        [id, i, installmentValue, dueDate]
       );
-
-      index++;
     }
 
-    res.json({ message: "Carnê atualizado com sucesso" });
+    res.json({ message: "Carnê atualizado com sucesso 🚀" });
 
   } catch (err) {
     console.error(err);
