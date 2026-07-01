@@ -8,7 +8,7 @@ const app = express();
 
 // CORREÇÃO: Adicione 'PATCH' na lista de métodos permitidos
 const corsOptions = {
-  origin: 'http://localhost:3000', // Seu frontend
+  origin: 'https://frontend-sgcc.vercel.app', // Seu frontend
   credentials: true, // Permite envio de credenciais
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'], // ← ADICIONE PATCH AQUI
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With']
