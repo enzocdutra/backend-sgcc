@@ -92,8 +92,9 @@ export const listSales = async (req, res) => {
     if (search && search.trim() !== '') {
       query += ` AND (
         c.name ILIKE $${params.length + 1} OR 
-        c.email ILIKE $${params.length + 1} OR
-        c.phone ILIKE $${params.length + 1}
+        c.phone ILIKE $${params.length + 1} OR
+        c.cpf ILIKE $${params.length + 1} OR
+        s.id::text = $${params.length + 1}
       )`;
       params.push(`%${search.trim()}%`);
     }
@@ -124,8 +125,9 @@ export const listSales = async (req, res) => {
     if (search && search.trim() !== '') {
       countQuery += ` AND (
         c.name ILIKE $${countParams.length + 1} OR 
-        c.email ILIKE $${countParams.length + 1} OR
-        c.phone ILIKE $${countParams.length + 1}
+        c.phone ILIKE $${countParams.length + 1} OR
+        c.cpf ILIKE $${countParams.length + 1} OR
+        s.id::text = $${countParams.length + 1}
       )`;
       countParams.push(`%${search.trim()}%`);
     }

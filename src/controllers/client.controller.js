@@ -18,9 +18,24 @@ export async function createClient(req, res) {
 
 export async function getClients(req, res) {
   try {
-    const page = parseInt(req.query.page) || 1
-    const limit = parseInt(req.query.limit) || 10
+    const page = Math.max(parseInt(req.query.page) || 1, 1)
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 10, 1), 100)
     const offset = (page - 1) * limit
+    const search = String(req.query.search || "").trim()
+    const params = []
+    const where = []
+
+    if (search) {
+      params.push(`%${search}%`)
+      where.push(`(
+        c.name ILIKE $${params.length} OR
+        c.cpf ILIKE $${params.length} OR
+        c.phone ILIKE $${params.length} OR
+        c.id::text = $${params.length}
+      )`)
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : ""
 
     const clientsQuery = `
       SELECT 
@@ -36,19 +51,25 @@ export async function getClients(req, res) {
       FROM clients c
       LEFT JOIN sales s ON s.client_id = c.id
       LEFT JOIN installments i ON i.sale_id = s.id
+      ${whereSql}
 
       GROUP BY c.id
       ORDER BY c.created_at DESC
-      LIMIT $1 OFFSET $2
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
     `
 
-    const totalQuery = `SELECT COUNT(*) FROM clients`
+    const totalQuery = `
+      SELECT COUNT(*)
+      FROM clients c
+      ${whereSql}
+    `
 
     const [clientsResult, totalResult] = await Promise.all([
-      db.query(clientsQuery, [limit, offset]),
-      db.query(totalQuery)
+      db.query(clientsQuery, [...params, limit, offset]),
+      db.query(totalQuery, params)
     ])
 
+    const total = Number(totalResult.rows[0].count)
     const clients = clientsResult.rows.map(c => ({
       ...c,
       parcelas_pendentes: Number(c.parcelas_pendentes),
@@ -58,9 +79,19 @@ export async function getClients(req, res) {
 
     res.json({
       data: clients,
-      total: Number(totalResult.rows[0].count),
+      total,
+      totalItems: total,
       page,
-      totalPages: Math.ceil(totalResult.rows[0].count / limit)
+      currentPage: page,
+      totalPages: Math.ceil(total / limit),
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(total / limit),
+        totalItems: total,
+        itemsPerPage: limit,
+        hasNextPage: page < Math.ceil(total / limit),
+        hasPreviousPage: page > 1
+      }
     })
 
   } catch (err) {
